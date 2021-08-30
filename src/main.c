@@ -16,7 +16,7 @@
 // Capacities / Constants
 #define MAX_VIEWS 4
 #define MAX_FORMATS 32
-#define MAX_SWAPCHAIN_IMAGES 8
+#define MAX_SWAPCHAIN_IMAGES 16
 
 #define HAND_LEFT_INDEX 0
 #define HAND_RIGHT_INDEX 1
@@ -127,19 +127,20 @@ static void render_block(float position[3], float orientation[4], float radii[3]
     glDrawArrays(GL_TRIANGLES, 0, 36);
 }
 
-void render_rotated_cube(float position[3], float cube_size, float rot, float projection_matrix[16], int modelLoc)
+void render_rotated_cube(float position[3], float cube_size, float rot, int modelLoc)
 {
+    float model[16];
     float scale[16];
     float rotation[16];
     float translation[16];
-    mat4_identity(scale);
-    mat4_scaling(scale, scale, (float[3]){cube_size / 2.0f, cube_size / 2.0f, cube_size / 2.0f});
+
     mat4_identity(translation);
     mat4_translation(translation, translation, position);
+    mat4_identity(rotation);
     mat4_rotation_y(rotation, to_radians(rot));
-
-    float model[16];
-    mat4_multiply(model, scale, rotation);
+    mat4_identity(scale);
+    mat4_scaling(scale, scale, (float[3]){cube_size / 2.0f, cube_size / 2.0f, cube_size / 2.0f});
+    mat4_multiply(model, rotation, scale);
     mat4_multiply(model, translation, model);
 
     glUniformMatrix4fv(modelLoc, 1, GL_FALSE, model);
@@ -179,10 +180,11 @@ void render_frame(int w, int h, XrTime predictedDisplayTime, int view_index, XrS
 
         float dist = 1.5f;
         float height = 0.5f;
-        render_rotated_cube((float[3]){0, height, -dist}, 0.33f, angle, proj, modelLoc);
-        render_rotated_cube((float[3]){0, height, dist}, 0.33f, angle, proj, modelLoc);
-        render_rotated_cube((float[3]){dist, height, 0}, 0.33f, angle, proj, modelLoc);
-        render_rotated_cube((float[3]){-dist, height, 0}, 0.33f, angle, proj, modelLoc);
+        render_rotated_cube((float[3]){0, height, -dist}, 0.33f, angle, modelLoc);
+        render_rotated_cube((float[3]){0, height, dist}, 0.33f, angle, modelLoc);
+        render_rotated_cube((float[3]){dist, height, 0}, 0.33f, angle, modelLoc);
+        render_rotated_cube((float[3]){-dist, height, 0}, 0.33f, angle, modelLoc);
+        render_rotated_cube((float[3]){0, height, 0}, 10.0f, 0, modelLoc);
     }
 
     // render controllers
@@ -230,7 +232,7 @@ void render_frame(int w, int h, XrTime predictedDisplayTime, int view_index, XrS
     }
 }
 
-#undef main
+// #undef main
 int main()
 {
     // Create Instance
@@ -329,7 +331,7 @@ int main()
 
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 6);
-    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 0);
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
     /* Create our window centered at half the VR resolution */
     int w = state.view_confs[0].recommendedImageRectWidth;
@@ -382,19 +384,6 @@ int main()
         printf("Failed to create play space\n");
         return 1;
     }
-
-    // Begin Session
-    // XrSessionBeginInfo session_begin_info = {
-    //     .type = XR_TYPE_SESSION_BEGIN_INFO,
-    //     .primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
-    // };
-
-    // result = xrBeginSession(state.session, &session_begin_info);
-    // if (result != XR_SUCCESS)
-    // {
-    //     printf("Failed to begin session\n");
-    //     return 1;
-    // }
 
     // Create Swapchains
     uint32_t swapchain_format_count;
@@ -534,28 +523,28 @@ int main()
         };
     };
 
-    for (uint32_t i = 0; i < state.view_count; i++)
-    {
-        state.depth_infos[i] = (XrCompositionLayerDepthInfoKHR){
-            .type = XR_TYPE_COMPOSITION_LAYER_DEPTH_INFO_KHR,
-            .minDepth = 0.0f,
-            .maxDepth = 1.0f,
-            .nearZ = state.near_z,
-            .farZ = state.far_z,
-            .subImage = {
-                .swapchain = state.depths[i],
-                .imageRect = {
-                    .offset.x = 0,
-                    .offset.y = 0,
-                    .extent.width = state.view_confs[i].recommendedImageRectWidth,
-                    .extent.height = state.view_confs[i].recommendedImageRectHeight,
-                },
-            },
+    // for (int i = 0; i < state.view_count; i++)
+    // {
+    //     state.depth_infos[i] = (XrCompositionLayerDepthInfoKHR){
+    //         .type = XR_TYPE_COMPOSITION_LAYER_DEPTH_INFO_KHR,
+    //         .minDepth = 0.0f,
+    //         .maxDepth = 1.0f,
+    //         .nearZ = state.near_z,
+    //         .farZ = state.far_z,
+    //         .subImage = {
+    //             .swapchain = state.depths[i],
+    //             .imageRect = {
+    //                 .offset.x = 0,
+    //                 .offset.y = 0,
+    //                 .extent.width = state.view_confs[i].recommendedImageRectWidth,
+    //                 .extent.height = state.view_confs[i].recommendedImageRectHeight,
+    //             },
+    //         },
 
-        };
+    //     };
 
-        state.proj_views[i].next = &state.depth_infos[i];
-    };
+    //     state.proj_views[i].next = &state.depth_infos[i];
+    // };
 
     // Setup Inputs/Actions/Poses
     xrStringToPath(state.instance, "/user/hand/left", &state.hand_paths[HAND_LEFT_INDEX]);
@@ -1045,25 +1034,10 @@ int main()
         XrFrameState frame_state = {.type = XR_TYPE_FRAME_STATE};
         XrFrameWaitInfo frame_wait_info = {.type = XR_TYPE_FRAME_WAIT_INFO};
         result = xrWaitFrame(state.session, &frame_wait_info, &frame_state);
+
         if (result != XR_SUCCESS)
         {
             printf("Failed to wait frame\n");
-            return 1;
-        }
-
-        // Create view, projection matrices
-        XrViewLocateInfo view_locate_info = {
-            .type = XR_TYPE_VIEW_LOCATE_INFO,
-            .viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
-            .displayTime = frame_state.predictedDisplayTime,
-            .space = state.play_space,
-        };
-
-        XrViewState view_state = {.type = XR_TYPE_VIEW_STATE};
-        result = xrLocateViews(state.session, &view_locate_info, &view_state, state.view_count, &state.view_count, state.views);
-        if (result != XR_SUCCESS)
-        {
-            printf("Failed to locate views\n");
             return 1;
         }
 
@@ -1183,14 +1157,70 @@ int main()
             break;
         }
 
+        // Create view, projection matrices
+        XrViewLocateInfo view_locate_info = {
+            .type = XR_TYPE_VIEW_LOCATE_INFO,
+            .viewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO,
+            .displayTime = frame_state.predictedDisplayTime,
+            .space = state.play_space,
+        };
+
+        XrViewState view_state = {.type = XR_TYPE_VIEW_STATE};
+        result = xrLocateViews(state.session, &view_locate_info, &view_state, 0, &state.view_count, NULL);
+        if (result != XR_SUCCESS)
+        {
+            printf("Failed to locate views\n");
+            return 1;
+        }
+
+        result = xrLocateViews(state.session, &view_locate_info, &view_state, state.view_count, &state.view_count, state.views);
+        if (result != XR_SUCCESS)
+        {
+            printf("Failed to locate views\n");
+            return 1;
+        }
+
         // Render each eye and fill projection_views with the result
         for (int i = 0; i < state.view_count; i++)
         {
-
             if (!frame_state.shouldRender)
             {
                 printf("shouldRender = false, Skipping rendering work\n");
                 continue;
+            }
+
+            uint32_t acquired_index;
+            XrSwapchainImageAcquireInfo acquire_info = {.type = XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
+            result = xrAcquireSwapchainImage(state.swapchains[i], &acquire_info, &acquired_index);
+            if (result != XR_SUCCESS)
+            {
+                printf("Failed to acquire swapchain image\n");
+                break;
+            }
+
+            uint32_t depth_acquired_index = UINT32_MAX;
+            XrSwapchainImageAcquireInfo depth_acquire_info = {.type = XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
+            result = xrAcquireSwapchainImage(state.depths[i], &depth_acquire_info, &depth_acquired_index);
+            if (result != XR_SUCCESS)
+            {
+                printf("Failed to acquire swapchain image\n");
+                break;
+            }
+
+            XrSwapchainImageWaitInfo wait_info = {.type = XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO, .timeout = 1000};
+            result = xrWaitSwapchainImage(state.swapchains[i], &wait_info);
+            if (result != XR_SUCCESS)
+            {
+                printf("Failed to wait for swapchain image\n");
+                break;
+            }
+
+            XrSwapchainImageWaitInfo depth_wait_info = {.type = XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO, .timeout = 1000};
+            result = xrWaitSwapchainImage(state.depths[i], &depth_wait_info);
+            if (result != XR_SUCCESS)
+            {
+                printf("Failed to wait for swapchain image\n");
+                break;
             }
 
             int w = state.view_confs[i].recommendedImageRectWidth;
@@ -1209,40 +1239,6 @@ int main()
             float view[16];
             mat4_multiply(view, translation, rotation);
             mat4_inverse(view, view);
-
-            uint32_t acquired_index;
-            XrSwapchainImageAcquireInfo acquire_info = {.type = XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
-            result = xrAcquireSwapchainImage(state.swapchains[i], &acquire_info, &acquired_index);
-            if (result != XR_SUCCESS)
-            {
-                printf("Failed to acquire swapchain image\n");
-                break;
-            }
-
-            XrSwapchainImageWaitInfo wait_info = {.type = XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO, .timeout = 1000};
-            result = xrWaitSwapchainImage(state.swapchains[i], &wait_info);
-            if (result != XR_SUCCESS)
-            {
-                printf("Failed to wait for swapchain image\n");
-                break;
-            }
-
-            uint32_t depth_acquired_index = UINT32_MAX;
-            XrSwapchainImageAcquireInfo depth_acquire_info = {.type = XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
-            result = xrAcquireSwapchainImage(state.depths[i], &depth_acquire_info, &depth_acquired_index);
-            if (result != XR_SUCCESS)
-            {
-                printf("Failed to acquire swapchain image\n");
-                break;
-            }
-
-            XrSwapchainImageWaitInfo depth_wait_info = {.type = XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO, .timeout = 1000};
-            result = xrWaitSwapchainImage(state.depths[i], &depth_wait_info);
-            if (result != XR_SUCCESS)
-            {
-                printf("Failed to wait for swapchain image\n");
-                break;
-            }
 
             state.proj_views[i].pose = state.views[i].pose;
             state.proj_views[i].fov = state.views[i].fov;
@@ -1272,6 +1268,7 @@ int main()
 
         XrCompositionLayerProjection projection_layer = {
             .type = XR_TYPE_COMPOSITION_LAYER_PROJECTION,
+            .layerFlags = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT,
             .space = state.play_space,
             .viewCount = state.view_count,
             .views = state.proj_views,
